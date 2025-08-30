@@ -196,7 +196,7 @@ class LC3Utils {
          * 将LC3编码文件解码为WAV文件
          * 
          * @param encodedFile 输入LC3编码文件
-         * @param decodedWavFile 输出WAV文件
+         * @param wavFile 输出WAV文件
          * @param frameDurationUs 帧长（微秒）
          * @param sampleRate 采样率（Hz）
          * @param outputByteCount 编码后每帧的字节数
@@ -208,7 +208,7 @@ class LC3Utils {
          */
         fun decodeLC3ToWav(
             encodedFile: File,
-            decodedWavFile: File,
+            wavFile: File,
             frameDurationUs: Int,
             sampleRate: Int,
             outputByteCount: Int,
@@ -242,7 +242,7 @@ class LC3Utils {
                 logger?.invoke("读取LC3编码数据: ${encodedData.size} 字节")
                 
                 // 创建临时PCM文件用于存储解码后的PCM数据
-                val tempPcmFile = File(decodedWavFile.parent, "temp_decoded.pcm")
+                val tempPcmFile = File(wavFile.parent, "temp_decoded.pcm")
                 if (tempPcmFile.exists()) tempPcmFile.delete()
                 val decodedOutputStream = FileOutputStream(tempPcmFile)
                 
@@ -317,8 +317,8 @@ class LC3Utils {
                 
                 // 将PCM数据转换为WAV格式
                 logger?.invoke("正在将解码后的PCM数据转换为WAV格式...")
-                if (decodedWavFile.exists()) decodedWavFile.delete()
-                WavUtils.convertPcmToWav(tempPcmFile, decodedWavFile, sampleRate, channelConfig, audioFormat, logger)
+                if (wavFile.exists()) wavFile.delete()
+                WavUtils.convertPcmToWav(tempPcmFile, wavFile, sampleRate, channelConfig, audioFormat, logger)
                 
                 // 删除临时PCM文件
                 tempPcmFile.delete()
@@ -328,7 +328,7 @@ class LC3Utils {
                 
                 logger?.invoke("LC3到WAV解码完成")
                 logger?.invoke("处理帧数: $frameCount")
-                logger?.invoke("解码文件大小: ${decodedWavFile.length()} 字节")
+                logger?.invoke("解码文件大小: ${wavFile.length()} 字节")
                 
                 return true
                 

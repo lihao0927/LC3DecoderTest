@@ -18,6 +18,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.core.view.WindowInsetsCompat
 import com.lh.audiotest03.utils.LC3Utils
 import com.lh.audiotest03.utils.WavUtils
@@ -33,11 +36,11 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
         
         // 音频配置
-        private const val SAMPLE_RATE = 48000 // 采样率
+        private const val SAMPLE_RATE = 16000 // 采样率
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO // 单声道
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT // 16位PCM
         private const val FRAME_DURATION_US = 10000 // 10ms帧长
-        private const val OUTPUT_BYTE_COUNT = 120 // 编码后每帧字节数
+        private const val OUTPUT_BYTE_COUNT = 20 // 编码后每帧字节数
     }
     
     // UI组件
@@ -50,7 +53,7 @@ class MainActivity : AppCompatActivity() {
     // 文件路径
     private lateinit var rawWavFile: File
     private lateinit var encodedFile: File
-    private lateinit var decodedPcmFile: File
+    private lateinit var decodedWavFile: File
     
     // 线程池
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -99,9 +102,21 @@ class MainActivity : AppCompatActivity() {
     
     private fun initFilePaths() {
         val dir = getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-        rawWavFile = File(dir, "raw_audio.wav")
-        encodedFile = File(dir, "encoded.lc3")
-        decodedPcmFile = File(dir, "decoded.pcm")
+        val timestamp = System.currentTimeMillis()
+        
+        // 将时间戳转换为年月日时分秒毫秒格式
+        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault())
+        val formattedDate = dateFormat.format(Date(timestamp))
+        
+        rawWavFile = File(dir, "raw_audio_${formattedDate}.wav")
+        encodedFile = File(dir, "encoded_${formattedDate}.lc3")
+        decodedWavFile = File(dir, "decoded_${formattedDate}.wav")
+        
+        // 记录当前使用的文件路径
+        appendLog("初始化文件路径:")
+        appendLog("- 原始WAV文件: ${rawWavFile.absolutePath}")
+        appendLog("- 编码LC3文件: ${encodedFile.absolutePath}")
+        appendLog("- 解码WAV文件: ${decodedWavFile.absolutePath}")
     }
     
     private fun requestAudioPermission() {
@@ -319,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         // 使用LC3Utils工具类进行LC3到WAV的解码
         LC3Utils.decodeLC3ToWav(
             encodedFile = encodedFile,
-            decodedWavFile = decodedPcmFile,
+            wavFile = decodedWavFile,
             frameDurationUs = FRAME_DURATION_US,
             sampleRate = SAMPLE_RATE,
             outputByteCount = OUTPUT_BYTE_COUNT,
@@ -333,28 +348,37 @@ class MainActivity : AppCompatActivity() {
     private fun playAudio() {
         appendLog("开始播放解码后的音频...")
         
-        if (!decodedPcmFile.exists()) {
-            appendLog("错误: 解码后的文件不存在，请先进行编码和解码")
+        if (!decodedWavFile.exists()) {
+            appendLog("错误: 解码后的WAV文件不存在，请先进行编码和解码")
             return
         }
         
         try {
-            // 读取解码后的PCM数据
-            val decodedData = decodedPcmFile.readBytes()
-            appendLog("读取解码后的PCM数据: ${decodedData.size} 字节")
+            // 解析WAV文件，提取PCM数据
+            val wavData = WavUtils.parseWavFile(decodedWavFile, this::appendLog)
+            if (wavData == null) {
+                appendLog("错误: 无法解析WAV文件")
+                return
+            }
+            
+            appendLog("WAV文件解析成功:")
+            appendLog("- 声道数: ${wavData.channels}")
+            appendLog("- 采样率: ${wavData.sampleRate} Hz")
+            appendLog("- 位深度: ${wavData.bitsPerSample} 位")
+            appendLog("- PCM数据大小: ${wavData.pcmData.size} 字节")
             
             // 创建AudioTrack
             val bufferSize = AudioTrack.getMinBufferSize(
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AUDIO_FORMAT
+                wavData.sampleRate,
+                if (wavData.channels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO,
+                if (wavData.bitsPerSample == 16) AudioFormat.ENCODING_PCM_16BIT else AudioFormat.ENCODING_PCM_8BIT
             )
             
             val audioTrack = AudioTrack(
                 AudioManager.STREAM_MUSIC,
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AUDIO_FORMAT,
+                wavData.sampleRate,
+                if (wavData.channels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO,
+                if (wavData.bitsPerSample == 16) AudioFormat.ENCODING_PCM_16BIT else AudioFormat.ENCODING_PCM_8BIT,
                 bufferSize,
                 AudioTrack.MODE_STREAM
             )
@@ -363,10 +387,12 @@ class MainActivity : AppCompatActivity() {
             audioTrack.play()
             
             // 写入数据
-            audioTrack.write(decodedData, 0, decodedData.size)
+            audioTrack.write(wavData.pcmData, 0, wavData.pcmData.size)
             
             // 等待播放完成
-            Thread.sleep(decodedData.size * 1000L / (SAMPLE_RATE * 2))
+            val playDurationMs = wavData.pcmData.size * 1000L / (wavData.sampleRate * wavData.channels * (wavData.bitsPerSample / 8))
+            appendLog("预计播放时长: ${playDurationMs} 毫秒")
+            Thread.sleep(playDurationMs)
             
             // 停止并释放资源
             audioTrack.stop()
